@@ -10,6 +10,8 @@ import org.elasticsearch.index.query.TermQueryBuilder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.data.elasticsearch.core.IndexedObjectInformation;
 import org.springframework.data.elasticsearch.core.ScriptType;
@@ -199,6 +201,38 @@ class AppTests {
     }
 
     /**
+     * 搜索排序
+     **/
+    @Test
+    void testDocumentQueryByOrder() {
+        List<User> users = new ArrayList<>();
+        NativeSearchQuery query = new NativeSearchQuery(QueryBuilders.matchAllQuery());
+        query.addSort(Sort.by(Sort.Direction.DESC, "age"));
+        SearchHits<User> searchHits = elasticsearchRestTemplate.search(query, User.class);
+        if (searchHits.hasSearchHits()) {
+            searchHits.getSearchHits().forEach(hit -> {
+                users.add(hit.getContent());
+            });
+        }
+        System.out.println(JSON.toJSONString(users));
+    }
+
+    /**
+     * 搜索排序分页
+     **/
+    @Test
+    void testDocumentQueryByPager() {
+        List<User> users = new ArrayList<>();
+        NativeSearchQuery query = new NativeSearchQuery(QueryBuilders.matchAllQuery());
+        query.setPageable(PageRequest.of(2, 2, Sort.Direction.DESC, "age"));
+        SearchHits<User> searchHits = elasticsearchRestTemplate.search(query, User.class);
+        if (searchHits.hasSearchHits()) {
+            searchHits.getSearchHits().forEach(userSearchHit -> users.add(userSearchHit.getContent()));
+        }
+        System.out.println(JSON.toJSONString(users));
+    }
+
+    /**
      * Terms查询 - 如果两个列表有交集，就能被搜索到
      **/
     @Test
@@ -226,6 +260,7 @@ class AppTests {
         List<Product> products = new ArrayList<>();
         BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
         boolQueryBuilder.mustNot(QueryBuilders.termsQuery("platTags", Lists.newArrayList("1", "4")));
+        System.out.println(boolQueryBuilder.toString());
         SearchHits<Product> searchHits = elasticsearchRestTemplate.search(new NativeSearchQuery(boolQueryBuilder), Product.class);
         if (searchHits.hasSearchHits()) {
             searchHits.getSearchHits().forEach(hit -> {
