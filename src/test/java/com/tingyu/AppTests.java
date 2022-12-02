@@ -4,18 +4,19 @@ import com.alibaba.fastjson.JSON;
 import com.tingyu.entity.Product;
 import com.tingyu.entity.User;
 import org.assertj.core.util.Lists;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.index.query.TermQueryBuilder;
+import org.elasticsearch.index.query.*;
+import org.elasticsearch.search.aggregations.Aggregation;
+import org.elasticsearch.search.aggregations.metrics.Avg;
+import org.elasticsearch.search.aggregations.metrics.AvgAggregationBuilder;
+import org.elasticsearch.search.aggregations.metrics.Max;
+import org.elasticsearch.search.aggregations.metrics.MaxAggregationBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
-import org.springframework.data.elasticsearch.core.IndexedObjectInformation;
-import org.springframework.data.elasticsearch.core.ScriptType;
-import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.*;
 import org.springframework.data.elasticsearch.core.document.Document;
 import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
 import org.springframework.data.elasticsearch.core.query.*;
@@ -92,12 +93,18 @@ class AppTests {
     @Test
     void testDocumentCreateBatch() {
         List<User> users = new ArrayList<>();
-        users.add(new User("11", "eleven", 11, "male", "Weihai"));
+        /*users.add(new User("11", "eleven", 11, "male", "Weihai"));
         users.add(new User("12", "twelve", 12, "female", "Binzhou"));
         users.add(new User("13", "thirteen", 13, "male", "Taian"));
         users.add(new User("14", "forteen", 14, "female", "Heze"));
         users.add(new User("15", "fifteen", 15, "male", "Zaozhuang"));
-        users.add(new User("16", "sixteen", 16, "female", "Qingdao"));
+        users.add(new User("16", "sixteen", 16, "female", "Qingdao"));*/
+        users.add(new User("21", "张三", 21, "男", "威海"));
+        users.add(new User("22", "李四", 22, "女", "上海"));
+        users.add(new User("23", "王五", 23, "男", "青岛"));
+        users.add(new User("24", "赵六", 24, "女", "青海"));
+        users.add(new User("25", "孙七", 25, "男", "辽宁"));
+        users.add(new User("26", "胡八", 26, "女", "连云港"));
         // bulk操作
         List<IndexQuery> indexQueries = new ArrayList<>();
         users.forEach(user -> {
@@ -233,6 +240,49 @@ class AppTests {
     }
 
     /**
+     * 范围查询
+     **/
+    @Test
+    void testDocumentQueryByRange() {
+        List<User> users = new ArrayList<>();
+        RangeQueryBuilder queryBuilder = QueryBuilders.rangeQuery("age");
+        queryBuilder.gte(13);
+        queryBuilder.lte(16);
+        NativeSearchQuery query = new NativeSearchQuery(queryBuilder);
+        query.addSort(Sort.by(Sort.Direction.DESC, "age"));
+        SearchHits<User> searchHits = elasticsearchRestTemplate.search(query, User.class);
+        if (searchHits.hasSearchHits()) {
+            searchHits.getSearchHits().forEach(userSearchHit -> users.add(userSearchHit.getContent()));
+        }
+        System.out.println(JSON.toJSONString(users));
+    }
+
+    /**
+     * 搜索高亮
+     **/
+    @Test
+    void testDocumentQueryHighLight() {
+        List<User> users = new ArrayList<>();
+        // 搜索条件
+        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("address", "青海");
+        // 高亮
+        HighlightBuilder highlightBuilder = new HighlightBuilder().field("address").preTags("<p style='color:red'>").postTags("</p>").fragmentSize(1);
+        // 搜索
+        NativeSearchQuery query = new NativeSearchQueryBuilder().withQuery(matchQueryBuilder).withHighlightBuilder(highlightBuilder).build();
+        // 结果
+        SearchHits<User> searchHits = elasticsearchRestTemplate.search(query, User.class);
+        if (searchHits.hasSearchHits()) {
+            searchHits.getSearchHits().forEach(hit -> {
+                User user = hit.getContent();
+                Map<String, List<String>> highlightFields = hit.getHighlightFields();
+                user.setAddress(highlightFields.get("address").get(0));
+                users.add(user);
+            });
+        }
+        System.out.println(JSON.toJSONString(users));
+    }
+
+    /**
      * Terms查询 - 如果两个列表有交集，就能被搜索到
      **/
     @Test
@@ -268,6 +318,33 @@ class AppTests {
             });
         }
         System.out.println(JSON.toJSONString(products));
+    }
+
+    /**
+     * 聚合查询
+     **/
+    @Test
+    void testDocumentAgg() {
+        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("address", "青海");
+        MaxAggregationBuilder maxAggregationBuilder = new MaxAggregationBuilder("maxAge").field("age");
+        AvgAggregationBuilder avgAggregationBuilder = new AvgAggregationBuilder("avgAge").field("age");
+        NativeSearchQuery query = new NativeSearchQueryBuilder().withQuery(matchQueryBuilder)
+                .withAggregations(maxAggregationBuilder).withAggregations(avgAggregationBuilder).build();
+        SearchHits<User> searchHits = elasticsearchRestTemplate.search(query, User.class);
+        if (searchHits.hasAggregations()) {
+            ElasticsearchAggregations elasticsearchAggregations = (ElasticsearchAggregations) searchHits.getAggregations();
+            List<Aggregation> aggregations = elasticsearchAggregations.aggregations().asList();
+            aggregations.forEach(aggregation -> {
+                if (aggregation instanceof Max) {
+                    Max max = (Max) aggregation;
+                    System.out.println(max.getName() + " : " + max.getValue());
+                }
+                if (aggregation instanceof Avg) {
+                    Avg avg = (Avg) aggregation;
+                    System.out.println(avg.getName() + " : " + avg.getValue());
+                }
+            });
+        }
     }
 
 }
